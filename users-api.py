@@ -19,15 +19,13 @@ def is_strong_password(password):
         re.search(r'[\W_]', password)
     )
 
-# Register route
+# Register route (unchanged)
 @app.route('/user/register', methods=['POST'])
 def register():
     data = request.get_json()
-    print("📥 Incoming registration data:", data)  # Debug print
-
     username = data.get('username')
     password = data.get('password')
-    role = data.get('role', 'user')  # Default role = 'user'
+    role = data.get('role', 'user')
 
     if not username or not password:
         return jsonify({"error": "Username and password are required"}), 400
@@ -45,12 +43,10 @@ def register():
     supabase.table('users').insert({'username': username, 'password': password, 'role': role}).execute()
     return jsonify({"message": "User registered", "role": role}), 201
 
-# Login route
+# Login route (unchanged)
 @app.route('/user/login', methods=['POST'])
 def login():
     data = request.get_json()
-    print("📥 Incoming login data:", data)  # Debug print
-
     username = data.get('username')
     password = data.get('password')
 
@@ -70,12 +66,10 @@ def login():
 
     return jsonify({"error": "Invalid username or password"}), 401
 
-# Delete user by ID
+# Delete user by ID (unchanged)
 @app.route('/user/delete', methods=['DELETE'])
 def delete_user():
     data = request.get_json()
-    print("📥 Incoming delete request:", data)  # Debug print
-
     user_id = data.get('id')
 
     if not user_id:
@@ -87,6 +81,51 @@ def delete_user():
 
     supabase.table('users').delete().eq('id', user_id).execute()
     return jsonify({"message": f"User with ID '{user_id}' deleted"}), 200
+
+# Update username or password
+@app.route('/user/update', methods=['PUT'])
+def update_user():
+    data = request.get_json()
+    user_id = data.get('id')
+    new_username = data.get('username')
+    new_password = data.get('password')
+
+    if not user_id:
+        return jsonify({"error": "User ID is required"}), 400
+
+    # Fetch current user data
+    user_response = supabase.table('users').select('*').eq('id', user_id).execute()
+    if not user_response.data or len(user_response.data) == 0:
+        return jsonify({"error": "User not found"}), 404
+
+    current_user = user_response.data[0]
+
+    updates = {}
+
+    # Validate and update username if provided
+    if new_username:
+        if new_username == current_user['username']:
+            return jsonify({"error": "New username cannot be the same as the old username"}), 400
+        
+        # Check if new username is taken by another user
+        username_check = supabase.table('users').select('*').eq('username', new_username).neq('id', user_id).execute()
+        if username_check.data and len(username_check.data) > 0:
+            return jsonify({"error": "Username already taken"}), 409
+
+        updates['username'] = new_username
+
+    # Validate and update password if provided
+    if new_password:
+        if not is_strong_password(new_password):
+            return jsonify({"error": "Password must be at least 8 characters and include uppercase, lowercase, digit, and special character"}), 400
+        
+        updates['password'] = new_password
+
+    if not updates:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    supabase.table('users').update(updates).eq('id', user_id).execute()
+    return jsonify({"message": "User updated successfully", "updated_fields": list(updates.keys())}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
